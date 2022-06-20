@@ -437,4 +437,6 @@ if [ -f '/Users/edelman/Temp/google-cloud-sdk/path.zsh.inc' ]; then . '/Users/ed
 # The next line enables shell command completion for gcloud.
 if [ -f '/Users/edelman/Temp/google-cloud-sdk/completion.zsh.inc' ]; then . '/Users/edelman/Temp/google-cloud-sdk/completion.zsh.inc'; fi
 
+export EDITOR="code -w"
+
 eval "$(direnv hook zsh)"
