@@ -1,0 +1,440 @@
+# Enable Powerlevel10k instant prompt. Should stay close to the top of ~/.zshrc.
+# Initialization code that may require console input (password prompts, [y/n]
+# confirmations, etc.) must go above this block; everything else may go below.
+if [[ -r "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh" ]]; then
+  source "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh"
+fi
+
+# Check if a command exists
+function can_haz() {
+  which "$@" > /dev/null 2>&1
+}
+
+# Correct spelling for commands
+setopt correct
+
+# turn off the infernal correctall for filenames
+unsetopt correctall
+
+
+# Base PATH
+PATH="$PATH:/usr/local/bin:/usr/local/sbin:/sbin:/usr/sbin:/bin:/usr/bin"
+
+# Conditional PATH additions
+for path_candidate in /Applications/Xcode.app/Contents/Developer/usr/bin \
+  /opt/homebrew/bin \
+  /opt/homebrew/sbin \
+  /opt/local/bin \
+  /opt/local/sbin \
+  /usr/local/bin \
+  /usr/local/sbin \
+  ~/.cabal/bin \
+  ~/.cargo/bin \
+  ~/.rbenv/bin \
+  ~/bin \
+  ~/src/gocode/bin \
+  ~/gocode
+do
+  if [[ -d "${path_candidate}" ]]; then
+    path+=("${path_candidate}")
+  fi
+done
+export PATH
+
+export PYENV_ROOT="$HOME/.pyenv"
+command -v pyenv >/dev/null || export PATH="$PYENV_ROOT/bin:$PATH"
+eval "$(pyenv init -)"
+
+eval "$(rbenv init - zsh)"
+
+
+if can_haz brew; then
+  BREW_PREFIX=$(brew --prefix)
+  if [[ -d "${BREW_PREFIX}/bin" ]]; then
+    export PATH="$PATH:${BREW_PREFIX}/bin"
+  fi
+  if [[ -d "${BREW_PREFIX}/sbin" ]]; then
+    export PATH="$PATH:${BREW_PREFIX}/sbin"
+  fi
+fi
+
+load-our-ssh-keys() {
+  # If keychain is installed let it take care of ssh-agent, else do it manually
+  if can_haz keychain; then
+    eval `keychain -q --eval`
+  else
+    if [ -z "$SSH_AUTH_SOCK" ]; then
+      # If user has keychain installed, let it take care of ssh-agent, else do it manually
+      # Check for a currently running instance of the agent
+      RUNNING_AGENT="$(ps -ax | grep 'ssh-agent -s' | grep -v grep | wc -l | tr -d '[:space:]')"
+      if [ "$RUNNING_AGENT" = "0" ]; then
+        if [ ! -d ~/.ssh ] ; then
+          mkdir -p ~/.ssh
+        fi
+        # Launch a new instance of the agent
+        ssh-agent -s &> ~/.ssh/ssh-agent
+      fi
+      eval $(cat ~/.ssh/ssh-agent)
+    fi
+  fi
+
+  local key_manager=ssh-add
+
+  if can_haz keychain; then
+    key_manager=keychain
+  fi
+
+  # Fun with SSH
+  if [ $($key_manager -l | grep -c "The agent has no identities." ) -eq 1 ]; then
+    if [[ "$(uname -s)" == "Darwin" ]]; then
+      # macOS allows us to store ssh key pass phrases in the keychain, so try
+      # to load ssh keys using pass phrases stored in the macOS keychain.
+      #
+      # You can use ssh-add -K /path/to/key to store pass phrases into
+      # the macOS keychain
+
+      # macOS Monterey deprecates the -K and -A flags. They have been replaced
+      # by the --apple-use-keychain and --apple-load-keychain flags.
+
+      # check if Monterey or higher
+      # https://scriptingosx.com/2020/09/macos-version-big-sur-update/
+      if [[ $(sw_vers -buildVersion) > "21" ]]; then
+        # Load all ssh keys that have pass phrases stored in macOS keychain using new flags
+        ssh-add --apple-load-keychain
+      else ssh-add -qA
+      fi
+    fi
+
+    for key in $(find ~/.ssh -type f -a \( -name '*id_rsa' -o -name '*id_dsa' -o -name '*id_ecdsa' \))
+    do
+      if [ -f ${key} -a $(ssh-add -l | grep -F -c "$(ssh-keygen -l -f $key | awk '{print $2}')" ) -eq 0 ]; then
+        $key_manager -q ${key}
+      fi
+    done
+  fi
+}
+
+if [[ -z "$SSH_CLIENT" ]] || can_haz keychain; then
+  # We're not on a remote machine, so load keys
+  load-our-ssh-keys
+fi
+
+ZGEN_DIR=${ZGEN_DIR:-$HOME/.zgenom}
+
+source "${HOME}/.zgenom/zgenom.zsh"
+
+# if the init script doesn't exist
+if ! zgenom saved; then
+
+  # specify plugins here
+  zgenom ohmyzsh
+
+  zgenom load zsh-users/zsh-syntax-highlighting
+  zgenom load zsh-users/zsh-history-substring-search
+
+  zmodload zsh/terminfo
+  bindkey "$terminfo[kcuu1]" history-substring-search-up
+  bindkey "$terminfo[kcud1]" history-substring-search-down
+
+  zgenom load unixorn/warhol.plugin.zsh
+
+  # macOS helpers. This plugin is smart enough to detect when it isn't running
+  # on macOS and not load itself, so you can safely share the same plugin list
+  # across macOS and Linux/BSD.
+  zgenom load unixorn/tumult.plugin.zsh
+
+  # Warn you when you run a command that you've set an alias for without
+  # using the alias.
+  zgenom load djui/alias-tips
+
+
+  # Supercharge your history search with fzf
+  zgenom load unixorn/fzf-zsh-plugin
+
+  # Adds aliases to open your current repo & branch on github.
+  zgenom load peterhurford/git-it-on.zsh
+
+  # Tom Limoncelli's tooling for storing private information (keys, etc)
+  # in a repository securely by encrypting them with gnupg.
+  zgenom load StackExchange/blackbox
+
+
+  zgenom oh-my-zsh plugins/pip
+  zgenom oh-my-zsh plugins/sudo
+  zgenom oh-my-zsh plugins/aws
+  zgenom oh-my-zsh plugins/chruby
+  zgenom oh-my-zsh plugins/colored-man-pages
+  zgenom oh-my-zsh plugins/git
+  zgenom oh-my-zsh plugins/github
+  zgenom oh-my-zsh plugins/python
+  zgenom oh-my-zsh plugins/rsync
+  zgenom oh-my-zsh plugins/screen
+  zgenom oh-my-zsh plugins/vagrant
+  zgenom oh-my-zsh plugins/copybuffer
+  zgenom oh-my-zsh plugins/copyfile
+  zgenom oh-my-zsh plugins/copypath
+  zgenom oh-my-zsh plugins/web-search
+  zgenom oh-my-zsh plugins/dirhistory
+
+
+  if [ $(uname -a | grep -ci Darwin) = 1 ]; then
+    # Load macOS-specific plugins
+    zgenom oh-my-zsh plugins/brew
+    zgenom oh-my-zsh plugins/macos
+  fi
+
+
+  # A set of shell functions to make it easy to install small apps and
+  # utilities distributed with pip.
+  zgenom load sharat87/pip-app
+
+  zgenom load chrissicool/zsh-256color
+
+  # Load more completion files for zsh from the zsh-lovers github repo.
+  zgenom load zsh-users/zsh-completions src
+
+  # Docker completion
+  zgenom load srijanshetty/docker-zsh
+
+  # Load tab completions for 1Password's op command line tool if it's installed
+  zgenom load unixorn/1password-op.plugin.zsh
+
+  # Very cool plugin that generates zsh completion functions for commands
+  # if they have getopt-style help text. It doesn't generate them on the fly,
+  # you'll have to explicitly generate a completion, but it's still quite cool.
+  zgenom load RobSis/zsh-completion-generator
+
+  # Add Fish-like autosuggestions to your ZSH.
+  zgenom load zsh-users/zsh-autosuggestions
+
+  # k is a zsh script / plugin to make directory listings more readable,
+  # adding a bit of color and some git status information on files and
+  # directories.
+  zgenom load supercrabtree/k
+
+
+  # zgenom load romkatv/powerlevel10k powerlevel10k
+  # warn-about-prompt-change
+
+
+
+  # generate the init script from plugins above
+  zgenom save
+fi
+
+# Set some history options
+#
+# You can customize these by putting a file in ~/.zshrc.d with
+# different settings - those files are loaded later specifically to
+# make overriding these (and things set by plugins) easy without having
+# to maintain a fork.
+setopt append_history
+setopt extended_history
+setopt hist_expire_dups_first
+setopt hist_ignore_all_dups
+setopt hist_ignore_dups
+setopt hist_ignore_space
+setopt hist_reduce_blanks
+setopt hist_save_no_dups
+setopt hist_verify
+setopt INC_APPEND_HISTORY
+unsetopt HIST_BEEP
+
+# Share your history across all your terminal windows
+setopt share_history
+#setopt noclobber
+
+# Keep a ton of history. You can override these without editing .zshrc by
+# adding a file to ~/.zshrc.d that changes these variables.
+HISTSIZE=100000
+SAVEHIST=100000
+HISTFILE=~/.zsh_history
+export HISTIGNORE="ls:cd:cd -:pwd:exit:date:* --help"
+
+# Set some options about directories
+setopt pushd_ignore_dups
+#setopt pushd_silent
+setopt AUTO_CD  # If a command is issued that can’t be executed as a normal command,
+                # and the command is the name of a directory, perform the cd command
+                # to that directory.
+
+# Add some completions settings
+setopt ALWAYS_TO_END     # Move cursor to the end of a completed word.
+setopt AUTO_LIST         # Automatically list choices on ambiguous completion.
+setopt AUTO_MENU         # Show completion menu on a successive tab press.
+setopt AUTO_PARAM_SLASH  # If completed parameter is a directory, add a trailing slash.
+setopt COMPLETE_IN_WORD  # Complete from both ends of a word.
+unsetopt MENU_COMPLETE   # Do not autoselect the first completion entry.
+
+# Miscellaneous settings
+setopt INTERACTIVE_COMMENTS  # Enable comments in interactive shell.
+
+setopt extended_glob # Enable more powerful glob features
+
+# Long running processes should return time after they complete. Specified
+# in seconds.
+REPORTTIME=2
+TIMEFMT="%U user %S system %P cpu %*Es total"
+
+# Expand aliases inline - see http://blog.patshead.com/2012/11/automatically-expaning-zsh-global-aliases---simplified.html
+globalias() {
+   if [[ $LBUFFER =~ ' [A-Z0-9]+$' ]]; then
+     zle _expand_alias
+     zle expand-word
+   fi
+   zle self-insert
+}
+
+zle -N globalias
+
+bindkey " " globalias
+bindkey "^ " magic-space           # control-space to bypass completion
+bindkey -M isearch " " magic-space # normal space during searches
+
+# Stuff that works on bash or zsh
+if [ -r ~/.sh_aliases ]; then
+  source ~/.sh_aliases
+fi
+
+# Stuff only tested on zsh, or explicitly zsh-specific
+if [ -r ~/.zsh_aliases ]; then
+  source ~/.zsh_aliases
+fi
+
+if [ -r ~/.zsh_functions ]; then
+  source ~/.zsh_functions
+fi
+
+export LOCATE_PATH=/var/db/locate.database
+
+# Load AWS credentials when present
+if [ -f ~/.aws/aws_variables ]; then
+  source ~/.aws/aws_variables
+fi
+
+# JAVA setup - needed for iam-* tools
+if [ -d /Library/Java/Home ];then
+  export JAVA_HOME=/Library/Java/Home
+fi
+
+if [[ "$(uname -s)" == "Darwin" ]]; then
+  # Load macOS-specific aliases - keep supporting the old name
+  [ -f ~/.osx_aliases ] && source ~/.osx_aliases
+  if [ -d ~/.osx_aliases.d ]; then
+    for alias_file in ~/.osx_aliases.d/*
+    do
+      source "$alias_file"
+    done
+  fi
+
+  # Apple renamed the OS, so...
+  [ -f ~/.macos_aliases ] && source ~/.macos_aliases
+  if [ -d ~/.macos_aliases.d ]; then
+    for alias_file in ~/.macos_aliases.d/*
+    do
+      source "$alias_file"
+    done
+  fi
+fi
+
+# Try and find the grc setup file
+if (( $+commands[grc] )); then
+  GRC_SETUP='/usr/local/etc/grc.bashrc'
+fi
+if (( $+commands[grc] )) && (( $+commands[brew] ))
+then
+  GRC_SETUP="$(brew --prefix)/etc/grc.bashrc"
+fi
+if [[ -r "$GRC_SETUP" ]]; then
+  source "$GRC_SETUP"
+fi
+unset GRC_SETUP
+
+if (( $+commands[grc] ))
+then
+  function ping5(){
+    grc --color=auto ping -c 5 "$@"
+  }
+else
+  alias ping5='ping -c 5'
+fi
+
+# Set up colorized ls when gls is present - it's installed by grc
+# shellcheck disable=SC2154
+if (( $+commands[gls] )); then
+  alias ls="gls -F --color"
+  alias l="gls -lAh --color"
+  alias ll="gls -l --color"
+  alias la='gls -A --color'
+fi
+
+# When present, use exa instead of ls
+if can_haz exa; then
+  if [[ -z "$EXA_TREE_IGNORE" ]]; then
+    EXA_TREE_IGNORE=".cache|cache|node_modules|vendor|.git"
+  fi
+
+  alias l='exa -al --icons --git --time-style=long-iso --group-directories-first --color-scale'
+  alias ls='exa --group-directories-first'
+
+  # Don't step on system-installed tree command
+  if ! can_haz tree; then
+    alias tree='exa --tree'
+  fi
+fi
+
+# Speed up autocomplete, force prefix mapping
+zstyle ':completion:*' accept-exact '*(N)'
+zstyle ':completion:*' use-cache on
+zstyle ':completion:*' cache-path ~/.zsh/cache
+zstyle -e ':completion:*:default' list-colors 'reply=("${PREFIX:+=(#bi)($PREFIX:t)*==34=34}:${(s.:.)LS_COLORS}")';
+
+# Load any custom zsh completions we've installed
+if [[ -d ~/.zsh-completions ]]; then
+  for completion in ~/.zsh-completions/*
+  do
+    if [[ -r "$completion" ]]; then
+      source "$completion"
+    else
+      echo "Can't read $completion"
+    fi
+  done
+fi
+
+
+# Fix bracketed paste issue
+# Closes #73
+ZSH_AUTOSUGGEST_CLEAR_WIDGETS+=(bracketed-paste)
+
+# Load iTerm shell integrations if found.
+test -e "${HOME}/.iterm2_shell_integration.zsh" && source "${HOME}/.iterm2_shell_integration.zsh"
+
+
+[ -f ~/.fzf.zsh ] && source ~/.fzf.zsh
+
+if ! can_haz fzf; then
+  echo "$?"
+  echo "You'll need to install fzf or your history search will be broken."
+  echo
+  echo
+  echo "Install instructions can be found at https://github.com/junegunn/fzf/"
+fi
+
+export VOLTA_HOME="$HOME/.volta"
+export PATH="$VOLTA_HOME/bin:$PATH"
+
+# pnpm
+export PNPM_HOME="/Users/edelman/Library/pnpm"
+export PATH="$PNPM_HOME:$PATH"
+# pnpm endPOWERLEVEL9K_DISABLE_CONFIGURATION_WIZARD=true
+
+# To customize prompt, run `p10k configure` or edit ~/.p10k.zsh.
+[[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
+
+# The next line updates PATH for the Google Cloud SDK.
+if [ -f '/Users/edelman/Temp/google-cloud-sdk/path.zsh.inc' ]; then . '/Users/edelman/Temp/google-cloud-sdk/path.zsh.inc'; fi
+
+# The next line enables shell command completion for gcloud.
+if [ -f '/Users/edelman/Temp/google-cloud-sdk/completion.zsh.inc' ]; then . '/Users/edelman/Temp/google-cloud-sdk/completion.zsh.inc'; fi
+
+eval "$(direnv hook zsh)"
